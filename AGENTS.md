@@ -1,13 +1,13 @@
-# AI Agent Instructions: Azure SQL Patent Intelligence
+# AI Agent Instructions: Azure SQL arXiv Paper Intelligence
 
 > IMPORTANT: Everything in this repo is public-facing, so do not place any sensitive info here and make sure to distinguish between what should be internal-facing info (e.g. secrets, PII, recording guides/scripts), and public-facing info (instructions, how-to guides, actual code utilized). If there is information that AI Agent needs across sessions but should not be published, put it in the `.internal/` folder which is ignored by git per the `.gitignore`.
 
 ## Project Overview
 
-This is a demo repository for a **KC Labs AI YouTube video** showing how AI Agent integrates with Azure SQL Database to build an AI-powered patent intelligence pipeline.
+This is a demo repository for a **KC Labs AI YouTube video** showing how AI Agent integrates with Azure SQL Database to build an AI-powered arXiv research-paper intelligence pipeline.
 
 **Audience**: YouTube viewers — data professionals, AI practitioners, and developers
-**Demo Subject**: AI & data processing patent analysis using USPTO API + Azure SQL Database
+**Demo Subject**: AI & data processing research-paper analysis using the arXiv API + Azure SQL Database
 
 > **AI Agent**: If `.internal/OWNER_CONFIG.md` exists, read it at the start of each session and use those concrete values (org URLs, resource names, emails) for all commands. This avoids resolving `$ENV_VAR` references or guessing placeholder values.
 >
@@ -41,33 +41,35 @@ When calling the cli tools, there may be a pause period of 30 seconds while it w
 
 ### Azure Functions (Daily Sync Automation)
 
-- **Function App**: `patent-sync-func` (Consumption plan, Python 3.10) — replace with your own Function App name
+- **Function App**: `patent-sync-func` (Consumption plan, Python 3.12) — replace with your own Function App name
 - **Resource Group**: `patent-intelligence-rg` — replace with your own resource group
 - **Built during demo**: The `azure_function/` directory is created from scratch by AI Agent during the live demo (not pre-built)
-- **What to build**: `function_app.py` (timer-triggered), `host.json`, `requirements.txt` (azure-functions, pyodbc), and a `shared/` subdirectory with copies of `patent_search.py` and `azure_sql_queries.py`
+- **What to build**: `function_app.py` (timer-triggered), `host.json`, `requirements.txt` (azure-functions, pyodbc), and a `shared/` subdirectory with copies of `arxiv_search.py` and `azure_sql_queries.py`
 - **Schedule**: `0 0 7 * * *` (daily at 7:00 AM UTC / midnight MST)
 - **Deploy**: `cd azure_function && func azure functionapp publish <your-function-app> --python`
 - **View logs**: `func azure functionapp logstream <your-function-app>`
-- **Manual trigger**: `az functionapp function invoke --name <your-function-app> --resource-group <your-rg> --function-name daily_patent_sync`
-- **Important**: Uses `ODBC Driver 17` (not 18) — the Python 3.10 Consumption plan image ships with Driver 17
+- **Manual trigger**: the Azure CLI has no `function invoke` command. Fetch the host key without printing it, then POST to the admin endpoint (HTTP 202 = accepted): `KEY=$(az functionapp keys list --name <your-function-app> --resource-group <your-rg> --query masterKey -o tsv)` then `curl -X POST -H "x-functions-key: $KEY" -H "Content-Type: application/json" -d '{}' https://<your-function-app>.azurewebsites.net/admin/functions/daily_paper_sync`
+- **Important**: `function_app.py` picks the newest installed SQL ODBC driver at runtime (18, else 17) because Consumption images differ. Python 3.10 reached end-of-life on 2026-10-31 and Azure rejects it for new apps, so use 3.12
 - **Setup**: See Prerequisites in README.md for creating the Function App and configuring Application Settings
 
 ### Python Tools (in tools/ directory)
 
-- **patent_search.py**: USPTO API wrapper with 2-tier fallback (USPTO ODP → Google Patents)
-  - `search_by_title("AI data processing", limit=17)` — primary function for demo
-  - `search_by_title("predictive analytics", limit=17)` — second topic
-  - `search_by_title("business intelligence", limit=16)` — third topic
-  - All 50 patents merge into the same PATENTS table for cross-topic analysis
-  - Supports `filing_date_from` / `filing_date_to` params for date-range filtering
-  - Supports `start` param for pagination (API returns max 100 per request)
-  - API key loaded from `.env` file (USPTO_API_KEY)
+- **arxiv_search.py**: arXiv API wrapper (export.arxiv.org) — no API key needed
+  - `search_by_title("large language models", limit=17)` — primary function for demo
+  - `search_by_title("time series forecasting", limit=17)` — second topic
+  - `search_by_title("vector database", limit=16)` — third topic
+  - All 50 papers merge into the same PAPERS table for cross-topic analysis
+  - `search_by_category("cs.DB", limit=100)` — precise search by arXiv category
+  - Supports `submitted_from` / `submitted_to` params for date-range filtering
+  - Supports `start` param for pagination; a `limit` above 100 pages automatically
+  - Throttled to one request every 3 seconds (arXiv terms of use). One query slice returns at most ~2000 results, so use monthly windows for deep backfills
+  - `SEARCH_TOPICS` and `BACKFILL_START` are the single source for the demo topics and the backfill start date
 - **azure_sql_queries.py**: T-SQL query builders
-  - `build_create_table_sql()` — DDL for PATENTS table with indexes
+  - `build_create_table_sql()` — DDL for PAPERS table with indexes
   - `build_upsert_query()` — Parameterized MERGE statement
-  - `get_trends_query()` — Filing trends by year
-  - `get_top_inventors_query()` — Uses CROSS APPLY OPENJSON
-  - `get_cpc_breakdown_query()` — Uses CROSS APPLY OPENJSON
+  - `get_trends_query()` — Submission trends by year
+  - `get_top_authors_query()` — Uses CROSS APPLY OPENJSON
+  - `get_category_breakdown_query()` — Uses CROSS APPLY OPENJSON
   - `build_create_sync_log_sql()` — DDL for SYNC_LOG table
   - `get_last_sync_date_query()` — Last successful sync date for daily sync
 
@@ -82,11 +84,11 @@ When calling the cli tools, there may be a pause period of 30 seconds while it w
 ### Key T-SQL Patterns
 
 ```sql
--- Parse JSON array (inventors, cpc_codes)
-SELECT inventor.value FROM PATENTS CROSS APPLY OPENJSON(inventors) AS inventor
+-- Parse JSON array (authors, categories)
+SELECT author.value FROM PAPERS CROSS APPLY OPENJSON(authors) AS author
 
 -- MERGE upsert (must end with semicolon!)
-MERGE INTO PATENTS AS target USING (...) AS source ON ... WHEN MATCHED THEN UPDATE ... WHEN NOT MATCHED THEN INSERT ...;
+MERGE INTO PAPERS AS target USING (...) AS source ON ... WHEN MATCHED THEN UPDATE ... WHEN NOT MATCHED THEN INSERT ...;
 
 -- Top N results
 SELECT TOP 10 ... FROM ... ORDER BY ...
@@ -108,7 +110,6 @@ Connection details are in `.env` file (gitignored). Template at `.env.example`.
 
 Required variables:
 
-- `USPTO_API_KEY` — Free from <https://data.uspto.gov/key/myapikey>
 - `AZURE_SQL_SERVER` — yourserver.database.windows.net
 - `AZURE_SQL_DATABASE` — PatentIntelligence
 - `AZURE_SQL_USER` — sqladmin
@@ -116,7 +117,7 @@ Required variables:
 - `AZURE_DEVOPS_ORG` — `https://dev.azure.com/your-org` (placeholder — replace with your org URL)
 - `AZURE_DEVOPS_PROJECT` — `your-project` (placeholder — replace with your project name)
 
-> **Note**: These same variables must be configured as Application Settings in the Azure Function App for the daily sync automation.
+> **Note**: The four `AZURE_SQL_*` variables must also be configured as Application Settings in the Azure Function App for the daily sync automation. The arXiv API needs no key. Azure resource names (database, resource group, Function App) are just labels — use your own.
 
 ## Demo Flow
 
@@ -125,11 +126,11 @@ The demo follows 9 steps in a single prompt:
 0. **Create Ticket** — Azure DevOps work item to track the pipeline build
 1. **Connect & Discover** — Show empty database
 2. **Create Schema** — DDL with indexes
-3. **Search USPTO** — API calls for AI data processing, predictive analytics, and business intelligence patents
+3. **Search arXiv** — API calls for large language models, time series forecasting, and vector database papers
 4. **Load Data** — Python pyodbc with MERGE upserts
 5. **Analyze** — T-SQL queries with OPENJSON
-5b. **Backfill** — All patents filed since Nov 30, 2022 (ChatGPT launch) via date-range API calls
-5c. **Daily Sync** — SYNC_LOG table + script to load net-new patents since last sync
+5b. **Backfill** — All papers submitted since Jan 1, 2025 via date-range API calls
+5c. **Daily Sync** — SYNC_LOG table + script to load net-new papers since last sync
 5d. **Deploy Function** — `func azure functionapp publish` to deploy daily sync as Azure Function
 6. **Visualize** — matplotlib charts
 7. **Report** — Markdown executive summary
@@ -184,13 +185,13 @@ How AI Agent should reason through tasks — applicable to any data pipeline pro
 - Close the ticket (state → `Done`) with a summary comment when work is complete
 - If ticket tracking is unavailable, note it and continue — don't block the core work
 
-## AI & Data CPC Codes Reference
+## AI & Data arXiv Categories Reference
 
-| CPC Code | Technology Area |
-| -------- | --------------- |
-| G06N | AI/ML computing — neural networks, machine learning |
-| G06F | Electric digital data processing |
-| G06Q | Business data processing / BI systems |
-| G06V | Image/video recognition |
-| G10L | Speech analysis and recognition |
-| G16H | Healthcare informatics / AI in medicine |
+| Category | Research Area |
+| -------- | ------------- |
+| cs.AI | Artificial intelligence |
+| cs.LG | Machine learning |
+| cs.DB | Databases and data management |
+| cs.CL | Computation and language (NLP) |
+| cs.IR | Information retrieval |
+| cs.CV | Computer vision |

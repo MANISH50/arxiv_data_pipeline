@@ -1,12 +1,11 @@
-"""Azure Function: Daily Patent Sync
+"""Azure Function: Daily arXiv Paper Sync
 
 Timer-triggered function that runs daily at 7:31 AM UTC (12:31 AM MST).
-Searches USPTO API for new patents since the last sync and loads them
-into Azure SQL Database using MERGE upsert.
+Searches the arXiv API for papers submitted since the last sync and loads
+them into Azure SQL Database using MERGE upsert. arXiv needs no API key.
 
 Environment variables (configure in Function App > Application Settings):
-    USPTO_API_KEY, AZURE_SQL_SERVER, AZURE_SQL_DATABASE,
-    AZURE_SQL_USER, AZURE_SQL_PASSWORD
+    AZURE_SQL_SERVER, AZURE_SQL_DATABASE, AZURE_SQL_USER, AZURE_SQL_PASSWORD
 """
 
 import json
@@ -18,7 +17,7 @@ from datetime import date
 import azure.functions as func
 import pyodbc
 
-from shared.patent_search import search_by_title
+from shared.arxiv_search import BACKFILL_START, SEARCH_TOPICS, search_by_title
 from shared.azure_sql_queries import (
     build_upsert_query,
     get_last_sync_date_query,
@@ -26,11 +25,16 @@ from shared.azure_sql_queries import (
 
 app = func.FunctionApp()
 
-SEARCH_TOPICS = [
-    "AI data processing",
-    "predictive analytics",
-    "business intelligence",
-]
+SYNC_LIMIT_PER_TOPIC = 500  # search_by_title pages automatically, 100 papers per call
+
+
+def _odbc_driver() -> str:
+    """Newest SQL Server ODBC driver in the Function image (older images ship 17, newer ones 18)."""
+    installed = pyodbc.drivers()
+    for name in ("ODBC Driver 18 for SQL Server", "ODBC Driver 17 for SQL Server"):
+        if name in installed:
+            return name
+    raise RuntimeError(f"No SQL Server ODBC driver found; installed: {installed}")
 
 
 def _get_connection(retries: int = 3, delay: int = 30) -> pyodbc.Connection:
@@ -39,7 +43,7 @@ def _get_connection(retries: int = 3, delay: int = 30) -> pyodbc.Connection:
     for attempt in range(retries):
         try:
             return pyodbc.connect(
-                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                f"DRIVER={{{_odbc_driver()}}};"
                 f"SERVER={os.environ['AZURE_SQL_SERVER']};"
                 f"DATABASE={os.environ['AZURE_SQL_DATABASE']};"
                 f"UID={os.environ['AZURE_SQL_USER']};"
@@ -54,9 +58,9 @@ def _get_connection(retries: int = 3, delay: int = 30) -> pyodbc.Connection:
 
 
 @app.timer_trigger(schedule="0 31 7 * * *", arg_name="timer", run_on_startup=False)
-def daily_patent_sync(timer: func.TimerRequest) -> None:
-    """Daily patent sync: search USPTO for new patents and load into Azure SQL."""
-    logging.info("Starting daily patent sync")
+def daily_paper_sync(timer: func.TimerRequest) -> None:
+    """Daily paper sync: search arXiv for new papers and load into Azure SQL."""
+    logging.info("Starting daily paper sync")
 
     conn = _get_connection()
     cursor = conn.cursor()
@@ -67,7 +71,7 @@ def daily_patent_sync(timer: func.TimerRequest) -> None:
     if row and row.last_sync_date:
         from_date = str(row.last_sync_date)
     else:
-        from_date = "2022-11-30"
+        from_date = BACKFILL_START
 
     to_date = date.today().isoformat()
     logging.info(f"Sync range: {from_date} to {to_date}")
@@ -78,39 +82,39 @@ def daily_patent_sync(timer: func.TimerRequest) -> None:
     for topic in SEARCH_TOPICS:
         results = search_by_title(
             topic,
-            limit=100,
-            filing_date_from=from_date,
-            filing_date_to=to_date,
+            limit=SYNC_LIMIT_PER_TOPIC,
+            submitted_from=from_date,
+            submitted_to=to_date,
         )
 
         count = 0
         for p in results:
             try:
                 params = (
-                    p.get("patent_number", ""),
+                    p.get("arxiv_id", ""),
                     p.get("title", ""),
                     p.get("abstract", ""),
-                    p.get("assignee", ""),
-                    json.dumps(p.get("inventors", [])),
-                    p.get("filing_date") or None,
-                    p.get("grant_date") or None,
-                    json.dumps(p.get("cpc_codes", [])),
+                    p.get("primary_category", ""),
+                    json.dumps(p.get("authors", [])),
+                    p.get("submitted_date") or None,
+                    p.get("updated_date") or None,
+                    json.dumps(p.get("categories", [])),
                     topic,
                     "daily_sync",
                 )
                 cursor.execute(merge_sql, params)
                 count += 1
             except Exception as e:
-                logging.error(f"Error loading {p.get('patent_number', '?')}: {e}")
+                logging.error(f"Error loading {p.get('arxiv_id', '?')}: {e}")
 
-        logging.info(f"  {topic}: {count} patents")
+        logging.info(f"  {topic}: {count} papers")
         total_loaded += count
 
     conn.commit()
 
     # Log the sync
     cursor.execute(
-        "INSERT INTO SYNC_LOG (filing_date_from, filing_date_to, patents_loaded, search_topics) "
+        "INSERT INTO SYNC_LOG (submitted_from, submitted_to, papers_loaded, search_topics) "
         "VALUES (?, ?, ?, ?)",
         (from_date, to_date, total_loaded, ", ".join(SEARCH_TOPICS)),
     )
@@ -119,4 +123,4 @@ def daily_patent_sync(timer: func.TimerRequest) -> None:
     cursor.close()
     conn.close()
 
-    logging.info(f"Daily sync complete: {total_loaded} patents loaded")
+    logging.info(f"Daily sync complete: {total_loaded} papers loaded")

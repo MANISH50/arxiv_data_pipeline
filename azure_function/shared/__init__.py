@@ -1,1 +1,1 @@
-"""Shared modules for Azure Function daily patent sync."""
+"""Shared modules for Azure Function daily arXiv paper sync."""

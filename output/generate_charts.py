@@ -1,4 +1,4 @@
-"""Generate patent analysis charts from Azure SQL data.
+"""Generate arXiv paper analysis charts from Azure SQL data.
 
 Connects to Azure SQL Database, runs analytical queries, and produces
 matplotlib charts saved to the output/ directory.
@@ -34,13 +34,13 @@ def get_connection() -> pyodbc.Connection:
     )
 
 
-def generate_filing_trends(cursor):
-    """Bar chart of patent filing counts by month."""
+def generate_submission_trends(cursor):
+    """Bar chart of paper submission counts by month."""
     cursor.execute("""
-        SELECT FORMAT(filing_date, 'yyyy-MM') AS filing_month, COUNT(*) AS cnt
-        FROM PATENTS WHERE filing_date IS NOT NULL
-        GROUP BY FORMAT(filing_date, 'yyyy-MM')
-        ORDER BY filing_month
+        SELECT FORMAT(submitted_date, 'yyyy-MM') AS submission_month, COUNT(*) AS cnt
+        FROM PAPERS WHERE submitted_date IS NOT NULL
+        GROUP BY FORMAT(submitted_date, 'yyyy-MM')
+        ORDER BY submission_month
     """)
     rows = cursor.fetchall()
     months = [r[0] for r in rows]
@@ -48,9 +48,12 @@ def generate_filing_trends(cursor):
 
     fig, ax = plt.subplots(figsize=(12, 6))
     bars = ax.bar(months, counts, color="#2563eb", edgecolor="white")
-    ax.set_xlabel("Filing Month", fontsize=12)
-    ax.set_ylabel("Patent Count", fontsize=12)
-    ax.set_title("AI & Data Patent Filing Trends (2025-2026)", fontsize=14, fontweight="bold")
+    ax.set_xlabel("Submission Month", fontsize=12)
+    ax.set_ylabel("Paper Count", fontsize=12)
+    title = "AI & Data arXiv Paper Submission Trends"
+    if months:
+        title += f" ({months[0][:4]}-{months[-1][:4]})" if months[0][:4] != months[-1][:4] else f" ({months[0][:4]})"
+    ax.set_title(title, fontsize=14, fontweight="bold")
     plt.xticks(rotation=45, ha="right")
     for bar, count in zip(bars, counts):
         ax.text(
@@ -62,45 +65,45 @@ def generate_filing_trends(cursor):
             fontsize=9,
         )
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "filing_trends.png")
+    path = os.path.join(OUTPUT_DIR, "submission_trends.png")
     plt.savefig(path, dpi=150)
     plt.close()
     print(f"Saved: {path}")
 
 
-def generate_cpc_breakdown(cursor):
-    """Horizontal bar chart of top 10 CPC technology categories."""
+def generate_category_breakdown(cursor):
+    """Horizontal bar chart of top 10 arXiv categories."""
     cursor.execute("""
-        SELECT TOP 10 LEFT(cpc.value, 4) AS cpc_group, COUNT(*) AS patent_count
-        FROM PATENTS CROSS APPLY OPENJSON(cpc_codes) AS cpc
-        GROUP BY LEFT(cpc.value, 4)
-        ORDER BY patent_count DESC
+        SELECT TOP 10 cat.value AS arxiv_category, COUNT(*) AS paper_count
+        FROM PAPERS CROSS APPLY OPENJSON(categories) AS cat
+        GROUP BY cat.value
+        ORDER BY paper_count DESC
     """)
     rows = cursor.fetchall()
-    cpc_labels = [r[0] for r in rows]
-    cpc_counts = [r[1] for r in rows]
+    category_labels = [r[0] for r in rows]
+    category_counts = [r[1] for r in rows]
 
-    # CPC code descriptions for readability
-    cpc_desc = {
-        "G06F": "Digital Data Processing",
-        "G06N": "AI/ML Computing",
-        "H04L": "Digital Transmission",
-        "H04N": "Image Communication",
-        "G06Q": "Business Data Processing",
-        "G06T": "Image Processing",
-        "A61B": "Medical Diagnostics",
-        "G06V": "Image Recognition",
-        "H04W": "Wireless Networks",
-        "G16H": "Healthcare Informatics",
+    # Category descriptions for readability
+    category_desc = {
+        "cs.AI": "Artificial Intelligence",
+        "cs.LG": "Machine Learning",
+        "cs.DB": "Databases",
+        "cs.CL": "Computation & Language",
+        "cs.CV": "Computer Vision",
+        "cs.IR": "Information Retrieval",
+        "cs.DC": "Distributed Computing",
+        "cs.SE": "Software Engineering",
+        "cs.CR": "Cryptography & Security",
+        "stat.ML": "Machine Learning (Statistics)",
     }
-    labels = [f"{c}\n{cpc_desc.get(c, '')}" for c in cpc_labels]
+    labels = [f"{c}\n{category_desc.get(c, '')}" for c in category_labels]
 
     fig, ax = plt.subplots(figsize=(12, 6))
-    colors = plt.cm.Set3(range(len(cpc_labels)))
-    bars = ax.barh(labels[::-1], cpc_counts[::-1], color=colors[::-1], edgecolor="white")
-    ax.set_xlabel("Patent Count", fontsize=12)
-    ax.set_title("Top 10 Technology Categories (CPC Codes)", fontsize=14, fontweight="bold")
-    for bar, count in zip(bars, cpc_counts[::-1]):
+    colors = plt.cm.Set3(range(len(category_labels)))
+    bars = ax.barh(labels[::-1], category_counts[::-1], color=colors[::-1], edgecolor="white")
+    ax.set_xlabel("Paper Count", fontsize=12)
+    ax.set_title("Top 10 Research Categories (arXiv)", fontsize=14, fontweight="bold")
+    for bar, count in zip(bars, category_counts[::-1]):
         ax.text(
             bar.get_width() + 5,
             bar.get_y() + bar.get_height() / 2.0,
@@ -110,7 +113,7 @@ def generate_cpc_breakdown(cursor):
             fontsize=9,
         )
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "cpc_breakdown.png")
+    path = os.path.join(OUTPUT_DIR, "category_breakdown.png")
     plt.savefig(path, dpi=150)
     plt.close()
     print(f"Saved: {path}")
@@ -120,8 +123,8 @@ if __name__ == "__main__":
     conn = get_connection()
     cursor = conn.cursor()
 
-    generate_filing_trends(cursor)
-    generate_cpc_breakdown(cursor)
+    generate_submission_trends(cursor)
+    generate_category_breakdown(cursor)
 
     cursor.close()
     conn.close()

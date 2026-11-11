@@ -9,7 +9,7 @@ Run a quick sqlcmd query against our Azure SQL database to wake it up: SELECT GE
 ## Pre-Demo: Verify Setup (run 5 min before, NOT on stage)
 
 ```
-Verify our setup: 1) Check the USPTO API key is configured, 2) Test sqlcmd can connect to Azure SQL, 3) Confirm pyodbc is installed. Just run quick checks for each.
+Verify our setup: 1) Check the arXiv API is reachable (no key needed), 2) Test sqlcmd can connect to Azure SQL, 3) Confirm pyodbc is installed. Just run quick checks for each.
 ```
 
 ## On Stage: /clear first
@@ -23,13 +23,13 @@ Run `/clear` to start with a clean conversation.
 ```xml
 <pipeline-request>
   <context>
-    I need to build a patent intelligence database for AI and data processing patents —
-    covering AI data processing, predictive analytics, and business intelligence.
-    Let's use our Azure SQL Database and the USPTO patent API.
+    I need to build a research-paper intelligence database for AI and data processing —
+    covering large language models, time series forecasting, and vector databases.
+    Let's use our Azure SQL Database and the arXiv API (no API key needed).
   </context>
 
   <rules>
-    - Announce each step before executing it (e.g., "Step 3: Searching USPTO...")
+    - Announce each step before executing it (e.g., "Step 3: Searching arXiv...")
     - Show every SQL query and its results inline — the audience needs to see what's happening
     - Keep all output concise: tables over paragraphs, top 10 over full dumps
     - One script per task — no unnecessary helper files or abstractions
@@ -40,7 +40,7 @@ Run `/clear` to start with a clean conversation.
   <steps>
     <step name="create-ticket">
       Create an Azure DevOps work item to track this pipeline build.
-      Use az boards to create a Task titled "Build AI & Data Patent Intelligence Pipeline".
+      Use az boards to create a Task titled "Build AI & Data arXiv Paper Intelligence Pipeline".
     </step>
 
     <step name="connect-discover">
@@ -52,36 +52,37 @@ Run `/clear` to start with a clean conversation.
     </step>
 
     <step name="create-schema">
-      Create a PATENTS table optimized for T-SQL with columns for
-      patent_number (PK), title, abstract, assignee, inventors (JSON as NVARCHAR(MAX)),
-      filing_date, grant_date, cpc_codes (JSON as NVARCHAR(MAX)), search_query, category,
-      and timestamps. Add indexes on assignee and filing_date.
+      Create a PAPERS table optimized for T-SQL with columns for
+      arxiv_id (PK), title, abstract, primary_category, authors (JSON as NVARCHAR(MAX)),
+      submitted_date, updated_date, categories (JSON as NVARCHAR(MAX)), search_query, load_source,
+      and timestamps. Add indexes on primary_category and submitted_date.
     </step>
 
-    <step name="search-uspto">
-      Use the patent search tools in tools/ to search three AI & data topics:
-      search_by_title("AI data processing", limit=17),
-      search_by_title("predictive analytics", limit=17),
-      search_by_title("business intelligence", limit=16).
-      Merge all results into one list (50 patents total).
+    <step name="search-arxiv">
+      Use the arXiv search tools in tools/ to search three AI & data topics:
+      search_by_title("large language models", limit=17),
+      search_by_title("time series forecasting", limit=17),
+      search_by_title("vector database", limit=16).
+      Merge all results into one list (50 papers total).
     </step>
 
     <step name="load-data">
-      Write a Python script using pyodbc to load those patent results into
+      Write a Python script using pyodbc to load those paper results into
       our Azure SQL table. Use parameterized MERGE statements for upsert logic. Execute it.
     </step>
 
     <step name="backfill">
-      Backfill all AI data processing, predictive analytics, and business intelligence patents
-      filed since November 30, 2022 (when ChatGPT launched). Use date-range filtering on the
-      USPTO API to pull patents in batches, loading each batch into the PATENTS table with MERGE
-      upserts. Track total patents loaded and date range covered.
+      Backfill all large language models, time series forecasting, and vector database papers
+      submitted since January 1, 2025. Use date-range filtering on the arXiv API
+      (submitted_from / submitted_to) to pull papers in batches, loading each batch into the
+      PAPERS table with MERGE upserts. arXiv asks for one request every 3 seconds, which
+      tools/arxiv_search.py already enforces. Track total papers loaded and date range covered.
     </step>
 
     <step name="daily-sync">
-      Set up a daily sync process that loads only net-new patents since the last run.
-      Create a SYNC_LOG table to track the last successful sync date and patent count.
-      Write a Python script that queries the USPTO API for patents filed after the last
+      Set up a daily sync process that loads only net-new papers since the last run.
+      Create a SYNC_LOG table to track the last successful sync date and paper count.
+      Write a Python script that queries the arXiv API for papers submitted after the last
       sync date, loads them via MERGE upserts, and updates the sync log.
     </step>
 
@@ -90,14 +91,15 @@ Run `/clear` to start with a clean conversation.
       azure_function/ directory from scratch with function_app.py, host.json,
       and requirements.txt. The function should:
         - Use a timer trigger with schedule "0 0 7 * * *" (daily at 7 AM UTC)
-        - Reuse the same patent search and MERGE upsert logic from the earlier steps
-        - Use ODBC Driver 17 (not 18 — the Consumption plan image ships with Driver 17)
-        - Copy the patent_search.py and azure_sql_queries.py into a shared/ subdirectory
+        - Reuse the same arXiv search and MERGE upsert logic from the earlier steps
+        - Pick the ODBC driver at runtime: Driver 18 if installed, else Driver 17 (Consumption plan images differ)
+        - Copy the arxiv_search.py and azure_sql_queries.py into a shared/ subdirectory
           so the function can import them
+      arXiv needs no API key, so the Function App only needs the four Azure SQL settings.
       Then deploy live:
         cd azure_function && func azure functionapp publish patent-sync-func --python
       After deployment, confirm the function is registered using:
-        az functionapp function show --name patent-sync-func --resource-group patent-intelligence-rg --function-name daily_patent_sync
+        az functionapp function show --name patent-sync-func --resource-group patent-intelligence-rg --function-name daily_paper_sync
       This turns the manual sync into a serverless job that runs every morning at 7 AM UTC.
     </step>
 
@@ -107,36 +109,36 @@ Run `/clear` to start with a clean conversation.
       into the Azure Portal Query Editor to validate results visually.
 
       Queries to write and run:
-      1. Summary stats — total patents loaded, earliest/latest filing dates,
-         unique assignees (save as sql/03_patent_count.sql)
-      2. Filing trends — patent count by year, ordered chronologically
-         (save as sql/04_filing_trends.sql)
-      3. Top inventors — parse the inventors JSON array using CROSS APPLY
-         OPENJSON, group by inventor name, top 10 (save as sql/05_top_inventors.sql)
-      4. Technology categories — parse cpc_codes JSON array using CROSS APPLY
-         OPENJSON, group by first 4 characters of CPC code, top 10
-         (save as sql/06_cpc_breakdown.sql)
+      1. Summary stats — total papers loaded, earliest/latest submission dates,
+         unique primary categories (save as sql/03_paper_count.sql)
+      2. Submission trends — paper count by year, ordered chronologically
+         (save as sql/04_submission_trends.sql)
+      3. Top authors — parse the authors JSON array using CROSS APPLY
+         OPENJSON, group by author name, top 10 (save as sql/05_top_authors.sql)
+      4. Research categories — parse categories JSON array using CROSS APPLY
+         OPENJSON, group by arXiv category (e.g., cs.AI), top 10
+         (save as sql/06_category_breakdown.sql)
     </step>
 
     <step name="visualize">
       Create matplotlib charts from the query results and save as PNG files
       to the output/ directory:
-      1. Filing trends by year (bar or line chart)
-      2. Top technology categories by CPC code (horizontal bar chart)
+      1. Submission trends by month (bar chart)
+      2. Top research categories by arXiv category (horizontal bar chart)
     </step>
 
     <step name="report">
-      Generate a markdown executive summary of the AI & data patent landscape.
+      Generate a markdown executive summary of the AI & data research landscape on arXiv.
     </step>
 
     <step name="close-ticket">
       Update the Azure DevOps work item to "Done". Add a discussion comment
-      summarizing what was built: table created, patents loaded, analysis complete.
+      summarizing what was built: table created, papers loaded, analysis complete.
     </step>
   </steps>
 
   <resources>
-    The patent search tools are in the tools/ directory. The Azure SQL connection details
+    The arXiv search tools are in the tools/ directory. The Azure SQL connection details
     are in the .env file. Let's build this entire pipeline right now.
   </resources>
 </pipeline-request>
@@ -148,9 +150,9 @@ Run `/clear` to start with a clean conversation.
 
 ```xml
 <follow-up>
-  The viewer wants to explore [TOPIC]. Search the USPTO for patents using
-  search_by_title("[TOPIC]", limit=20), load the results into our PATENTS table,
-  and give me a quick summary of what's being patented in that area.
+  The viewer wants to explore [TOPIC]. Search arXiv for papers using
+  search_by_title("[TOPIC]", limit=20), load the results into our PAPERS table,
+  and give me a quick summary of what researchers are publishing in that area.
 </follow-up>
 ```
 
@@ -160,8 +162,8 @@ Run `/clear` to start with a clean conversation.
 
 ```xml
 <follow-up>
-  Compare patent activity across our three topics: AI data processing, predictive analytics,
-  and business intelligence. Run a query showing filing trends by topic side by side,
+  Compare paper activity across our three topics: large language models, time series forecasting,
+  and vector databases. Run a query showing submission trends by topic side by side,
   and create a comparison chart.
 </follow-up>
 ```

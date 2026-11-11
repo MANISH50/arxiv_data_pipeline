@@ -6,9 +6,9 @@ If Claude Code encounters issues during the demo, use these manual commands.
 
 ```bash
 az boards work-item create \
-  --title "Build AI & Data Patent Intelligence Pipeline" \
+  --title "Build AI & Data arXiv Paper Intelligence Pipeline" \
   --type Task \
-  --description "Build patent intelligence pipeline: schema creation, USPTO API search, data loading, T-SQL analysis, and visualization." \
+  --description "Build arXiv paper intelligence pipeline: schema creation, arXiv API search, data loading, T-SQL analysis, and visualization." \
   --output table
 ```
 
@@ -20,50 +20,52 @@ Note the ID from the output for step 8.
 sqlcmd -S $AZURE_SQL_SERVER -d $AZURE_SQL_DATABASE -U $AZURE_SQL_USER -P $AZURE_SQL_PASSWORD -Q "SELECT name FROM sys.tables"
 ```
 
-## 2. Create PATENTS Table
+## 2. Create PAPERS Table
 
 ```bash
 sqlcmd -S $AZURE_SQL_SERVER -d $AZURE_SQL_DATABASE -U $AZURE_SQL_USER -P $AZURE_SQL_PASSWORD -Q "
-IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PATENTS')
-CREATE TABLE PATENTS (
-    patent_number NVARCHAR(50) NOT NULL PRIMARY KEY,
-    title NVARCHAR(500),
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PAPERS')
+CREATE TABLE PAPERS (
+    arxiv_id NVARCHAR(50) NOT NULL PRIMARY KEY,
+    title NVARCHAR(1000),
     abstract NVARCHAR(MAX),
-    assignee NVARCHAR(300),
-    inventors NVARCHAR(MAX),
-    filing_date DATE,
-    grant_date DATE,
-    cpc_codes NVARCHAR(MAX),
+    primary_category NVARCHAR(100),
+    authors NVARCHAR(MAX),
+    submitted_date DATE,
+    updated_date DATE,
+    categories NVARCHAR(MAX),
     search_query NVARCHAR(200),
-    category NVARCHAR(100),
+    load_source NVARCHAR(100),
     created_at DATETIME2 DEFAULT GETDATE(),
     updated_at DATETIME2 DEFAULT GETDATE()
 );
-CREATE INDEX IX_PATENTS_ASSIGNEE ON PATENTS (assignee);
-CREATE INDEX IX_PATENTS_FILING_DATE ON PATENTS (filing_date);
+CREATE INDEX IX_PAPERS_PRIMARY_CATEGORY ON PAPERS (primary_category);
+CREATE INDEX IX_PAPERS_SUBMITTED_DATE ON PAPERS (submitted_date);
 "
 ```
 
-## 3. Search USPTO API (Python)
+## 3. Search arXiv API (Python)
 
 ```bash
 python3 -c "
-from tools.patent_search import search_by_title
+from tools.arxiv_search import search_by_title
 import json
 
-results_ai = search_by_title('AI data processing', limit=17)
-results_pred = search_by_title('predictive analytics', limit=17)
-results_bi = search_by_title('business intelligence', limit=16)
-all_results = results_ai + results_pred + results_bi
+results_llm = search_by_title('large language models', limit=17)
+results_ts = search_by_title('time series forecasting', limit=17)
+results_vdb = search_by_title('vector database', limit=16)
+all_results = results_llm + results_ts + results_vdb
 
-print(f'Found {len(all_results)} patents total')
-print(f'  AI data processing: {len(results_ai)}')
-print(f'  Predictive analytics: {len(results_pred)}')
-print(f'  Business intelligence: {len(results_bi)}')
+print(f'Found {len(all_results)} papers total')
+print(f'  Large language models: {len(results_llm)}')
+print(f'  Time series forecasting: {len(results_ts)}')
+print(f'  Vector database: {len(results_vdb)}')
 for p in all_results[:5]:
-    print(f'  - {p[\"patent_number\"]}: {p[\"title\"][:60]}...')
+    print(f'  - {p[\"arxiv_id\"]}: {p[\"title\"][:60]}...')
 "
 ```
+
+arXiv needs no API key. The search module waits 3 seconds between calls (arXiv's rate rule), so this takes about 10 seconds.
 
 ## 4. Load Data (Python with pyodbc)
 
@@ -71,7 +73,7 @@ for p in all_results[:5]:
 python3 -c "
 import os, json, pyodbc
 from dotenv import load_dotenv
-from tools.patent_search import search_by_title
+from tools.arxiv_search import search_by_title
 
 load_dotenv()
 conn_str = (
@@ -87,92 +89,94 @@ cursor = conn.cursor()
 
 # Search three AI & data topics
 topics = [
-    ('AI data processing', 17),
-    ('predictive analytics', 17),
-    ('business intelligence', 16),
+    ('large language models', 17),
+    ('time series forecasting', 17),
+    ('vector database', 16),
 ]
-all_patents = []
+all_papers = []
 for topic, limit in topics:
     results = search_by_title(topic, limit=limit)
     for p in results:
         p['search_query'] = topic
-        p['category'] = 'title_search'
-    all_patents.extend(results)
+        p['load_source'] = 'title_search'
+    all_papers.extend(results)
 
 merge_sql = '''
-MERGE INTO PATENTS AS target
-USING (SELECT ? AS patent_number, ? AS title, ? AS abstract, ? AS assignee,
-       ? AS inventors, ? AS filing_date, ? AS grant_date, ? AS cpc_codes,
-       ? AS search_query, ? AS category) AS source
-ON target.patent_number = source.patent_number
+MERGE INTO PAPERS AS target
+USING (SELECT ? AS arxiv_id, ? AS title, ? AS abstract, ? AS primary_category,
+       ? AS authors, ? AS submitted_date, ? AS updated_date, ? AS categories,
+       ? AS search_query, ? AS load_source) AS source
+ON target.arxiv_id = source.arxiv_id
 WHEN MATCHED THEN UPDATE SET title=source.title, abstract=source.abstract,
-    assignee=source.assignee, inventors=source.inventors, filing_date=source.filing_date,
-    grant_date=source.grant_date, cpc_codes=source.cpc_codes, updated_at=GETDATE()
-WHEN NOT MATCHED THEN INSERT (patent_number, title, abstract, assignee, inventors,
-    filing_date, grant_date, cpc_codes, search_query, category, created_at, updated_at)
-VALUES (source.patent_number, source.title, source.abstract, source.assignee,
-    source.inventors, source.filing_date, source.grant_date, source.cpc_codes,
-    source.search_query, source.category, GETDATE(), GETDATE());
+    primary_category=source.primary_category, authors=source.authors,
+    submitted_date=source.submitted_date, updated_date=source.updated_date,
+    categories=source.categories, search_query=source.search_query,
+    load_source=source.load_source, updated_at=GETDATE()
+WHEN NOT MATCHED THEN INSERT (arxiv_id, title, abstract, primary_category, authors,
+    submitted_date, updated_date, categories, search_query, load_source, created_at, updated_at)
+VALUES (source.arxiv_id, source.title, source.abstract, source.primary_category,
+    source.authors, source.submitted_date, source.updated_date, source.categories,
+    source.search_query, source.load_source, GETDATE(), GETDATE());
 '''
 
-for p in all_patents:
+for p in all_papers:
     cursor.execute(merge_sql, (
-        p['patent_number'], p['title'], p.get('abstract', ''), p['assignee'],
-        json.dumps(p.get('inventors', [])), p.get('filing_date'),
-        p.get('grant_date'), json.dumps(p.get('cpc_codes', [])),
-        p.get('search_query', ''), p.get('category', 'title_search')
+        p['arxiv_id'], p['title'], p.get('abstract', ''), p['primary_category'],
+        json.dumps(p.get('authors', [])), p.get('submitted_date'),
+        p.get('updated_date'), json.dumps(p.get('categories', [])),
+        p.get('search_query', ''), p.get('load_source', 'title_search')
     ))
 
 conn.commit()
-print(f'Loaded {len(all_patents)} patents')
+print(f'Loaded {len(all_papers)} papers')
 conn.close()
 "
 ```
 
 ## 5. Analytical Queries
 
-### Patent Count and Date Range
+### Paper Count and Date Range
 ```bash
 sqlcmd -S $AZURE_SQL_SERVER -d $AZURE_SQL_DATABASE -U $AZURE_SQL_USER -P $AZURE_SQL_PASSWORD -Q "
-SELECT COUNT(*) AS total_patents, MIN(filing_date) AS earliest, MAX(filing_date) AS latest
-FROM PATENTS;
+SELECT COUNT(*) AS total_papers, MIN(submitted_date) AS earliest, MAX(submitted_date) AS latest
+FROM PAPERS;
 "
 ```
 
-### Filing Trends by Year
+### Submission Trends by Year
 ```bash
 sqlcmd -S $AZURE_SQL_SERVER -d $AZURE_SQL_DATABASE -U $AZURE_SQL_USER -P $AZURE_SQL_PASSWORD -Q "
-SELECT YEAR(filing_date) AS year, COUNT(*) AS patents
-FROM PATENTS WHERE filing_date IS NOT NULL
-GROUP BY YEAR(filing_date) ORDER BY year;
+SELECT YEAR(submitted_date) AS year, COUNT(*) AS papers
+FROM PAPERS WHERE submitted_date IS NOT NULL
+GROUP BY YEAR(submitted_date) ORDER BY year;
 "
 ```
 
-### Top Inventors (OPENJSON)
+### Top Authors (OPENJSON)
 ```bash
 sqlcmd -S $AZURE_SQL_SERVER -d $AZURE_SQL_DATABASE -U $AZURE_SQL_USER -P $AZURE_SQL_PASSWORD -Q "
-SELECT TOP 10 inventor.value AS inventor, COUNT(*) AS patents
-FROM PATENTS CROSS APPLY OPENJSON(inventors) AS inventor
-GROUP BY inventor.value ORDER BY patents DESC;
+SELECT TOP 10 author.value AS author, COUNT(*) AS papers
+FROM PAPERS CROSS APPLY OPENJSON(authors) AS author
+GROUP BY author.value ORDER BY papers DESC;
 "
 ```
 
-### CPC Code Breakdown (OPENJSON)
+### arXiv Category Breakdown (OPENJSON)
 ```bash
 sqlcmd -S $AZURE_SQL_SERVER -d $AZURE_SQL_DATABASE -U $AZURE_SQL_USER -P $AZURE_SQL_PASSWORD -Q "
-SELECT TOP 10 LEFT(cpc.value, 4) AS cpc_group, COUNT(*) AS patents
-FROM PATENTS CROSS APPLY OPENJSON(cpc_codes) AS cpc
-GROUP BY LEFT(cpc.value, 4) ORDER BY patents DESC;
+SELECT TOP 10 cat.value AS arxiv_category, COUNT(*) AS papers
+FROM PAPERS CROSS APPLY OPENJSON(categories) AS cat
+GROUP BY cat.value ORDER BY papers DESC;
 "
 ```
 
-## 5b. Backfill Patents Since ChatGPT Launch (Nov 30, 2022)
+## 5b. Backfill Papers Since January 1, 2025
 
 ```bash
 python3 -c "
 import os, json, pyodbc
 from dotenv import load_dotenv
-from tools.patent_search import search_by_title
+from tools.arxiv_search import search_by_title, SEARCH_TOPICS, BACKFILL_START
 
 load_dotenv()
 conn_str = (
@@ -186,47 +190,43 @@ conn_str = (
 conn = pyodbc.connect(conn_str)
 cursor = conn.cursor()
 
-topics = ['AI data processing', 'predictive analytics', 'business intelligence']
 merge_sql = '''
-MERGE INTO PATENTS AS target
-USING (SELECT ? AS patent_number, ? AS title, ? AS abstract, ? AS assignee,
-       ? AS inventors, ? AS filing_date, ? AS grant_date, ? AS cpc_codes,
-       ? AS search_query, ? AS category) AS source
-ON target.patent_number = source.patent_number
+MERGE INTO PAPERS AS target
+USING (SELECT ? AS arxiv_id, ? AS title, ? AS abstract, ? AS primary_category,
+       ? AS authors, ? AS submitted_date, ? AS updated_date, ? AS categories,
+       ? AS search_query, ? AS load_source) AS source
+ON target.arxiv_id = source.arxiv_id
 WHEN MATCHED THEN UPDATE SET title=source.title, abstract=source.abstract,
-    assignee=source.assignee, inventors=source.inventors, filing_date=source.filing_date,
-    grant_date=source.grant_date, cpc_codes=source.cpc_codes, updated_at=GETDATE()
-WHEN NOT MATCHED THEN INSERT (patent_number, title, abstract, assignee, inventors,
-    filing_date, grant_date, cpc_codes, search_query, category, created_at, updated_at)
-VALUES (source.patent_number, source.title, source.abstract, source.assignee,
-    source.inventors, source.filing_date, source.grant_date, source.cpc_codes,
-    source.search_query, source.category, GETDATE(), GETDATE());
+    primary_category=source.primary_category, authors=source.authors,
+    submitted_date=source.submitted_date, updated_date=source.updated_date,
+    categories=source.categories, updated_at=GETDATE()
+WHEN NOT MATCHED THEN INSERT (arxiv_id, title, abstract, primary_category, authors,
+    submitted_date, updated_date, categories, search_query, load_source, created_at, updated_at)
+VALUES (source.arxiv_id, source.title, source.abstract, source.primary_category,
+    source.authors, source.submitted_date, source.updated_date, source.categories,
+    source.search_query, source.load_source, GETDATE(), GETDATE());
 '''
 
 total = 0
-for topic in topics:
-    offset = 0
-    while True:
-        batch = search_by_title(topic, limit=100, filing_date_from='2022-11-30', start=offset)
-        if not batch:
-            break
-        for p in batch:
-            cursor.execute(merge_sql, (
-                p['patent_number'], p['title'], p.get('abstract', ''), p['assignee'],
-                json.dumps(p.get('inventors', [])), p.get('filing_date'),
-                p.get('grant_date'), json.dumps(p.get('cpc_codes', [])),
-                topic, 'backfill'
-            ))
-        total += len(batch)
-        offset += len(batch)
-        if len(batch) < 100:
-            break
+for topic in SEARCH_TOPICS:
+    # search_by_title pages automatically (100 papers per call, 3 s apart)
+    batch = search_by_title(topic, limit=500, submitted_from=BACKFILL_START)
+    for p in batch:
+        cursor.execute(merge_sql, (
+            p['arxiv_id'], p['title'], p.get('abstract', ''), p['primary_category'],
+            json.dumps(p.get('authors', [])), p.get('submitted_date'),
+            p.get('updated_date'), json.dumps(p.get('categories', [])),
+            topic, 'backfill'
+        ))
     conn.commit()
+    total += len(batch)
 
-print(f'Backfill complete: {total} patents loaded since 2022-11-30')
+print(f'Backfill complete: {total} papers loaded since {BACKFILL_START}')
 conn.close()
 "
 ```
+
+For a deeper, category-based collection (cs.AI, cs.LG, cs.DB by month), run `python3 scripts/category_backfill.py`.
 
 ## 5c. Daily Sync — Create SYNC_LOG Table and Run Sync
 
@@ -237,9 +237,9 @@ IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'SYNC_LOG')
 CREATE TABLE SYNC_LOG (
     sync_id INT IDENTITY(1,1) PRIMARY KEY,
     sync_date DATETIME2 DEFAULT GETDATE(),
-    filing_date_from DATE,
-    filing_date_to DATE,
-    patents_loaded INT,
+    submitted_from DATE,
+    submitted_to DATE,
+    papers_loaded INT,
     search_topics NVARCHAR(500),
     sync_status NVARCHAR(50) DEFAULT 'completed'
 );
@@ -252,7 +252,7 @@ python3 -c "
 import os, json, pyodbc
 from datetime import date
 from dotenv import load_dotenv
-from tools.patent_search import search_by_title
+from tools.arxiv_search import search_by_title, SEARCH_TOPICS, BACKFILL_START
 
 load_dotenv()
 conn_str = (
@@ -268,49 +268,49 @@ cursor = conn.cursor()
 
 # Get last sync date
 cursor.execute('''
-    SELECT TOP 1 filing_date_to FROM SYNC_LOG
+    SELECT TOP 1 submitted_to FROM SYNC_LOG
     WHERE sync_status = \'completed\' ORDER BY sync_date DESC
 ''')
 row = cursor.fetchone()
-last_date = str(row[0]) if row else '2022-11-30'
+last_date = str(row[0]) if row else BACKFILL_START
 today = str(date.today())
 
-topics = ['AI data processing', 'predictive analytics', 'business intelligence']
 merge_sql = '''
-MERGE INTO PATENTS AS target
-USING (SELECT ? AS patent_number, ? AS title, ? AS abstract, ? AS assignee,
-       ? AS inventors, ? AS filing_date, ? AS grant_date, ? AS cpc_codes,
-       ? AS search_query, ? AS category) AS source
-ON target.patent_number = source.patent_number
+MERGE INTO PAPERS AS target
+USING (SELECT ? AS arxiv_id, ? AS title, ? AS abstract, ? AS primary_category,
+       ? AS authors, ? AS submitted_date, ? AS updated_date, ? AS categories,
+       ? AS search_query, ? AS load_source) AS source
+ON target.arxiv_id = source.arxiv_id
 WHEN MATCHED THEN UPDATE SET title=source.title, abstract=source.abstract,
-    assignee=source.assignee, inventors=source.inventors, filing_date=source.filing_date,
-    grant_date=source.grant_date, cpc_codes=source.cpc_codes, updated_at=GETDATE()
-WHEN NOT MATCHED THEN INSERT (patent_number, title, abstract, assignee, inventors,
-    filing_date, grant_date, cpc_codes, search_query, category, created_at, updated_at)
-VALUES (source.patent_number, source.title, source.abstract, source.assignee,
-    source.inventors, source.filing_date, source.grant_date, source.cpc_codes,
-    source.search_query, source.category, GETDATE(), GETDATE());
+    primary_category=source.primary_category, authors=source.authors,
+    submitted_date=source.submitted_date, updated_date=source.updated_date,
+    categories=source.categories, updated_at=GETDATE()
+WHEN NOT MATCHED THEN INSERT (arxiv_id, title, abstract, primary_category, authors,
+    submitted_date, updated_date, categories, search_query, load_source, created_at, updated_at)
+VALUES (source.arxiv_id, source.title, source.abstract, source.primary_category,
+    source.authors, source.submitted_date, source.updated_date, source.categories,
+    source.search_query, source.load_source, GETDATE(), GETDATE());
 '''
 
 total = 0
-for topic in topics:
-    results = search_by_title(topic, limit=100, filing_date_from=last_date, filing_date_to=today)
+for topic in SEARCH_TOPICS:
+    results = search_by_title(topic, limit=500, submitted_from=last_date, submitted_to=today)
     for p in results:
         cursor.execute(merge_sql, (
-            p['patent_number'], p['title'], p.get('abstract', ''), p['assignee'],
-            json.dumps(p.get('inventors', [])), p.get('filing_date'),
-            p.get('grant_date'), json.dumps(p.get('cpc_codes', [])),
+            p['arxiv_id'], p['title'], p.get('abstract', ''), p['primary_category'],
+            json.dumps(p.get('authors', [])), p.get('submitted_date'),
+            p.get('updated_date'), json.dumps(p.get('categories', [])),
             topic, 'daily_sync'
         ))
     total += len(results)
 
 conn.commit()
 cursor.execute('''
-    INSERT INTO SYNC_LOG (filing_date_from, filing_date_to, patents_loaded, search_topics)
+    INSERT INTO SYNC_LOG (submitted_from, submitted_to, papers_loaded, search_topics)
     VALUES (?, ?, ?, ?)
-''', (last_date, today, total, ', '.join(topics)))
+''', (last_date, today, total, ', '.join(SEARCH_TOPICS)))
 conn.commit()
-print(f'Daily sync complete: {total} patents loaded ({last_date} to {today})')
+print(f'Daily sync complete: {total} papers loaded ({last_date} to {today})')
 conn.close()
 "
 ```
@@ -319,7 +319,8 @@ conn.close()
 
 > The `azure_function/` directory is built from scratch by Claude Code during the live demo.
 > If you need to create it manually, it should contain: `function_app.py` (timer trigger),
-> `host.json`, `requirements.txt`, and `shared/` (with `patent_search.py` and `azure_sql_queries.py`).
+> `host.json`, `requirements.txt`, and `shared/` (with `arxiv_search.py` and `azure_sql_queries.py`).
+> arXiv needs no API key, so the Function App only needs the four Azure SQL settings.
 
 ```bash
 # Deploy the daily sync function to Azure
@@ -331,16 +332,15 @@ cd azure_function && func azure functionapp publish patent-sync-func --python
 az functionapp function show \
   --name patent-sync-func \
   --resource-group patent-intelligence-rg \
-  --function-name daily_patent_sync \
+  --function-name daily_paper_sync \
   --output table
 ```
 
 ```bash
-# (Optional) Manually trigger the function to test
-az functionapp function invoke \
-  --name patent-sync-func \
-  --resource-group patent-intelligence-rg \
-  --function-name daily_patent_sync
+# (Optional) Manually trigger the function to test (HTTP 202 = accepted; do not print the key)
+KEY=$(az functionapp keys list --name patent-sync-func --resource-group patent-intelligence-rg --query masterKey -o tsv)
+curl -X POST -H "x-functions-key: $KEY" -H "Content-Type: application/json" -d '{}' \
+  https://patent-sync-func.azurewebsites.net/admin/functions/daily_paper_sync
 ```
 
 ```bash
@@ -355,12 +355,12 @@ func azure functionapp logstream patent-sync-func
 az boards work-item update \
   --id <ID> \
   --state Done \
-  --discussion "Pipeline complete: PATENTS table created with indexes, AI & data patents loaded via MERGE upserts across 3 topics, analysis run with OPENJSON, matplotlib visualizations generated, executive summary produced." \
+  --discussion "Pipeline complete: PAPERS table created with indexes, AI & data papers loaded via MERGE upserts across 3 topics, analysis run with OPENJSON, matplotlib visualizations generated, executive summary produced." \
   --output table
 ```
 
 ## 9. Cleanup (after demo)
 
 ```bash
-sqlcmd -S $AZURE_SQL_SERVER -d $AZURE_SQL_DATABASE -U $AZURE_SQL_USER -P $AZURE_SQL_PASSWORD -Q "DROP TABLE IF EXISTS PATENTS;"
+sqlcmd -S $AZURE_SQL_SERVER -d $AZURE_SQL_DATABASE -U $AZURE_SQL_USER -P $AZURE_SQL_PASSWORD -Q "DROP TABLE IF EXISTS PAPERS;"
 ```

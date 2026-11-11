@@ -1,6 +1,6 @@
 <div align="center">
 
-# Claude Code + Azure SQL: AI-Powered Patent Intelligence
+# Claude Code + Azure SQL: AI-Powered arXiv Research Intelligence
 
 ### From Zero to Full Data Pipeline — Faster Than You Thought Possible
 
@@ -8,7 +8,7 @@
 [![Azure SQL](https://img.shields.io/badge/Azure_SQL-Free_Tier-0078D4?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://aka.ms/azuresqlhub)
 [![Python](https://img.shields.io/badge/Python-pyodbc-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![T-SQL](https://img.shields.io/badge/T--SQL-OPENJSON-CC2927?style=for-the-badge&logo=microsoftsqlserver&logoColor=white)](https://learn.microsoft.com/en-us/sql/t-sql/)
-[![USPTO API](https://img.shields.io/badge/USPTO-Patent_API-darkblue?style=for-the-badge)](https://data.uspto.gov)
+[![arXiv API](https://img.shields.io/badge/arXiv-Paper_API-b31b1b?style=for-the-badge&logo=arxiv&logoColor=white)](https://info.arxiv.org/help/api/index.html)
 [![Azure Functions](https://img.shields.io/badge/Azure_Functions-Timer_Trigger-0062AD?style=for-the-badge&logo=azurefunctions&logoColor=white)](https://learn.microsoft.com/en-us/azure/azure-functions/)
 [![Azure DevOps](https://img.shields.io/badge/Azure_DevOps-Boards-0078D7?style=for-the-badge&logo=azuredevops&logoColor=white)](https://dev.azure.com)
 
@@ -43,13 +43,13 @@ AZ Tech Week 2026:
 
 > **Today with Claude Code and other AI coding tools, one well-designed prompt with the appropriate context can lead us to building a full data pipeline in one sitting. What used to take days now can happen over hours or even minutes in a single conversation, with ticket tracking, schema design, API ingestion, data loading, analysis, and visualization all handled by an AI agent using the tools available in your Microsoft data stack today.**
 
-In this video I'll build a real patent intelligence database analyzing AI and data processing patents across the industry using:
+In this video I'll build a real research-paper intelligence database analyzing AI and data processing papers from arXiv using:
 
 - **Claude Code** as the AI agent — orchestrating the entire workflow via different CLI/MCP tools
 - **Azure SQL Database** (free tier) as the data store, queried through `sqlcmd` and loaded with `pyodbc`
 - **Azure DevOps Boards** (free tier) for real-world ticket-driven workflow — the pipeline opens a ticket and closes it when done
-- **USPTO Patent API** (free) as the live data source
-- **Azure Functions** (free tier) for automated daily patent sync — timer-triggered, serverless
+- **arXiv API** (free, no key) as the live data source
+- **Azure Functions** (free tier) for automated daily paper sync — timer-triggered, serverless
 - **One structured prompt** that drives all steps from ticket creation to ticket closure.
 
 ---
@@ -68,7 +68,7 @@ In this video I'll build a real patent intelligence database analyzing AI and da
 │                                                              │      │
 │                  Show CLAUDE.md     DevOps Ticket ──▶        ▼      │
 │                  + tools/           empty DB ──▶ full       Q&A     │
-│                                     patent analysis                  │
+│                                     paper analysis                   │
 │                                     ──▶ Azure Function               │
 │                                     ──▶ Close Ticket                 │
 │                                                                      │
@@ -89,7 +89,7 @@ In this video I'll build a real patent intelligence database analyzing AI and da
   <context>
     I just cloned the azure-sql-patent-intelligence repo and need to install all
     dependencies, configure my environment, and verify everything works before
-    running the demo. My Azure SQL Database and USPTO API key should already be
+    running the demo. My Azure SQL Database should already be
     set up — I just need the local tooling wired together.
   </context>
 
@@ -147,7 +147,7 @@ In this video I'll build a real patent intelligence database analyzing AI and da
       - sqlcmd: available or not
       - Azure CLI + DevOps extension: available or not
       - Azure SQL connection: connected or failed (with reason)
-      - USPTO API key: valid or missing
+      - arXiv API: reachable or not (no key needed)
     </step>
   </steps>
 </prereqs-request>
@@ -160,7 +160,7 @@ In this video I'll build a real patent intelligence database analyzing AI and da
 ## Demo: One Prompt, Complete Pipeline
 
 ```text
-DevOps ──▶ USPTO API ──▶ Python ──▶ Azure SQL ──▶ T-SQL Analysis ──▶ Azure Function ──▶ Visualizations ──▶ DevOps
+DevOps ──▶ arXiv API ──▶ Python ──▶ Azure SQL ──▶ T-SQL Analysis ──▶ Azure Function ──▶ Visualizations ──▶ DevOps
 (ticket)    (search)     (load)      (store)       (OPENJSON)         (daily sync)      (matplotlib)     (close)
 ```
 
@@ -170,13 +170,13 @@ DevOps ──▶ USPTO API ──▶ Python ──▶ Azure SQL ──▶ T-SQL 
 ```xml
 <pipeline-request>
   <context>
-    I need to build a patent intelligence database for AI and data processing patents —
-    covering AI data processing, predictive analytics, and business intelligence.
-    Let's use our Azure SQL Database and the USPTO patent API.
+    I need to build a research-paper intelligence database for AI and data processing —
+    covering large language models, time series forecasting, and vector databases.
+    Let's use our Azure SQL Database and the arXiv API (no API key needed).
   </context>
 
   <rules>
-    - Announce each step before executing it (e.g., "Step 3: Searching USPTO...")
+    - Announce each step before executing it (e.g., "Step 3: Searching arXiv...")
     - Show every SQL query and its results inline — the audience needs to see what's happening
     - Keep all output concise: tables over paragraphs, top 10 over full dumps
     - One script per task — no unnecessary helper files or abstractions
@@ -187,7 +187,7 @@ DevOps ──▶ USPTO API ──▶ Python ──▶ Azure SQL ──▶ T-SQL 
   <steps>
     <step name="create-ticket">
       Create an Azure DevOps work item to track this pipeline build.
-      Use az boards to create a Task titled "Build AI & Data Patent Intelligence Pipeline".
+      Use az boards to create a Task titled "Build AI & Data arXiv Paper Intelligence Pipeline".
     </step>
 
     <step name="connect-discover">
@@ -199,36 +199,37 @@ DevOps ──▶ USPTO API ──▶ Python ──▶ Azure SQL ──▶ T-SQL 
     </step>
 
     <step name="create-schema">
-      Create a PATENTS table optimized for T-SQL with columns for
-      patent_number (PK), title, abstract, assignee, inventors (JSON as NVARCHAR(MAX)),
-      filing_date, grant_date, cpc_codes (JSON as NVARCHAR(MAX)), search_query, category,
-      and timestamps. Add indexes on assignee and filing_date.
+      Create a PAPERS table optimized for T-SQL with columns for
+      arxiv_id (PK), title, abstract, primary_category, authors (JSON as NVARCHAR(MAX)),
+      submitted_date, updated_date, categories (JSON as NVARCHAR(MAX)), search_query, load_source,
+      and timestamps. Add indexes on primary_category and submitted_date.
     </step>
 
-    <step name="search-uspto">
-      Use the patent search tools in tools/ to search three AI & data topics:
-      search_by_title("AI data processing", limit=17),
-      search_by_title("predictive analytics", limit=17),
-      search_by_title("business intelligence", limit=16).
-      Merge all results into one list (50 patents total).
+    <step name="search-arxiv">
+      Use the arXiv search tools in tools/ to search three AI & data topics:
+      search_by_title("large language models", limit=17),
+      search_by_title("time series forecasting", limit=17),
+      search_by_title("vector database", limit=16).
+      Merge all results into one list (50 papers total).
     </step>
 
     <step name="load-data">
-      Write a Python script using pyodbc to load those patent results into
+      Write a Python script using pyodbc to load those paper results into
       our Azure SQL table. Use parameterized MERGE statements for upsert logic. Execute it.
     </step>
 
     <step name="backfill">
-      Backfill all AI data processing, predictive analytics, and business intelligence patents
-      filed since November 30, 2022 (when ChatGPT launched). Use date-range filtering on the
-      USPTO API to pull patents in batches, loading each batch into the PATENTS table with MERGE
-      upserts. Track total patents loaded and date range covered.
+      Backfill all large language models, time series forecasting, and vector database papers
+      submitted since January 1, 2025. Use date-range filtering on the arXiv API
+      (submitted_from / submitted_to) to pull papers in batches, loading each batch into the
+      PAPERS table with MERGE upserts. arXiv asks for one request every 3 seconds, which
+      tools/arxiv_search.py already enforces. Track total papers loaded and date range covered.
     </step>
 
     <step name="daily-sync">
-      Set up a daily sync process that loads only net-new patents since the last run.
-      Create a SYNC_LOG table to track the last successful sync date and patent count.
-      Write a Python script that queries the USPTO API for patents filed after the last
+      Set up a daily sync process that loads only net-new papers since the last run.
+      Create a SYNC_LOG table to track the last successful sync date and paper count.
+      Write a Python script that queries the arXiv API for papers submitted after the last
       sync date, loads them via MERGE upserts, and updates the sync log.
     </step>
 
@@ -237,14 +238,15 @@ DevOps ──▶ USPTO API ──▶ Python ──▶ Azure SQL ──▶ T-SQL 
       azure_function/ directory from scratch with function_app.py, host.json,
       and requirements.txt. The function should:
         - Use a timer trigger with schedule "0 0 7 * * *" (daily at 7 AM UTC)
-        - Reuse the same patent search and MERGE upsert logic from the earlier steps
-        - Use ODBC Driver 17 (not 18 — the Consumption plan image ships with Driver 17)
-        - Copy the patent_search.py and azure_sql_queries.py into a shared/ subdirectory
+        - Reuse the same arXiv search and MERGE upsert logic from the earlier steps
+        - Pick the ODBC driver at runtime: Driver 18 if installed, else Driver 17 (Consumption plan images differ)
+        - Copy the arxiv_search.py and azure_sql_queries.py into a shared/ subdirectory
           so the function can import them
+      arXiv needs no API key, so the Function App only needs the four Azure SQL settings.
       Then deploy live:
         cd azure_function && func azure functionapp publish patent-sync-func --python
       After deployment, confirm the function is registered using:
-        az functionapp function show --name patent-sync-func --resource-group patent-intelligence-rg --function-name daily_patent_sync
+        az functionapp function show --name patent-sync-func --resource-group patent-intelligence-rg --function-name daily_paper_sync
       This turns the manual sync into a serverless job that runs every morning at 7 AM UTC.
     </step>
 
@@ -254,36 +256,36 @@ DevOps ──▶ USPTO API ──▶ Python ──▶ Azure SQL ──▶ T-SQL 
       into the Azure Portal Query Editor to validate results visually.
 
       Queries to write and run:
-      1. Summary stats — total patents loaded, earliest/latest filing dates,
-         unique assignees (save as sql/03_patent_count.sql)
-      2. Filing trends — patent count by year, ordered chronologically
-         (save as sql/04_filing_trends.sql)
-      3. Top inventors — parse the inventors JSON array using CROSS APPLY
-         OPENJSON, group by inventor name, top 10 (save as sql/05_top_inventors.sql)
-      4. Technology categories — parse cpc_codes JSON array using CROSS APPLY
-         OPENJSON, group by first 4 characters of CPC code, top 10
-         (save as sql/06_cpc_breakdown.sql)
+      1. Summary stats — total papers loaded, earliest/latest submission dates,
+         unique primary categories (save as sql/03_paper_count.sql)
+      2. Submission trends — paper count by year, ordered chronologically
+         (save as sql/04_submission_trends.sql)
+      3. Top authors — parse the authors JSON array using CROSS APPLY
+         OPENJSON, group by author name, top 10 (save as sql/05_top_authors.sql)
+      4. Research categories — parse categories JSON array using CROSS APPLY
+         OPENJSON, group by arXiv category (e.g., cs.AI), top 10
+         (save as sql/06_category_breakdown.sql)
     </step>
 
     <step name="visualize">
       Create matplotlib charts from the query results and save as PNG files
       to the output/ directory:
-      1. Filing trends by year (bar or line chart)
-      2. Top technology categories by CPC code (horizontal bar chart)
+      1. Submission trends by month (bar chart)
+      2. Top research categories by arXiv category (horizontal bar chart)
     </step>
 
     <step name="report">
-      Generate a markdown executive summary of the AI & data patent landscape.
+      Generate a markdown executive summary of the AI & data research landscape on arXiv.
     </step>
 
     <step name="close-ticket">
       Update the Azure DevOps work item to "Done". Add a discussion comment
-      summarizing what was built: table created, patents loaded, analysis complete.
+      summarizing what was built: table created, papers loaded, analysis complete.
     </step>
   </steps>
 
   <resources>
-    The patent search tools are in the tools/ directory. The Azure SQL connection details
+    The arXiv search tools are in the tools/ directory. The Azure SQL connection details
     are in the .env file. Let's build this entire pipeline right now.
   </resources>
 </pipeline-request>
@@ -300,24 +302,24 @@ DevOps ──▶ USPTO API ──▶ Python ──▶ Azure SQL ──▶ T-SQL 
 | **CLAUDE.md** | A markdown file that gives Claude Code all the context it needs about your project: available tools, database connections, coding conventions, and workflow steps. Think of it as the instruction manual for your AI agent. |
 | **MERGE (T-SQL)** | An upsert statement. If the record exists, update it. If it doesn't, insert it. Makes data loading idempotent, so you can run it multiple times without duplicating data. |
 | **OPENJSON (T-SQL)** | A T-SQL function that lets you query inside JSON strings stored in NVARCHAR columns. Azure SQL doesn't have a native JSON type, so this is how you parse JSON arrays for analysis. |
-| **CPC Codes** | Cooperative Patent Classification. Every patent is tagged with codes describing its technology area. G06N is AI/ML, G06F is data processing, G06Q is business intelligence. Think of them as genre tags for inventions. |
+| **arXiv Categories** | Subject tags that authors and moderators assign to every paper. cs.AI is artificial intelligence, cs.LG is machine learning, cs.DB is databases. Think of them as genre tags for research. |
 
 ---
 
-## AI & Data CPC Codes Reference
+## AI & Data arXiv Categories Reference
 
-**CPC (Cooperative Patent Classification)** is the global system used by the USPTO and European Patent Office to categorize patents by technology area. Every patent is tagged with one or more CPC codes — think of them as the "genre tags" for inventions. Analyzing CPC codes reveals where innovation is happening across different AI and data processing domains.
+**arXiv categories** are the subject tags every paper carries: one primary category plus any cross-listed ones. Analyzing them reveals where research activity is concentrated across AI and data processing domains. The pipeline stores them as a JSON array and parses them with `OPENJSON`.
 
-These are the CPC codes you'll see most often in AI & data processing patents:
+These are the categories you'll see most often in AI & data processing papers:
 
-| CPC Code | Technology Area | Description |
-|:--------:|:----------------|:------------|
-| G06N | AI/ML Computing | Neural networks, machine learning, deep learning |
-| G06F | Digital Data Processing | Data processing systems, computing architectures |
-| G06Q | Business Data Processing | BI systems, financial analytics, e-commerce |
-| G06V | Image/Video Recognition | Computer vision, pattern recognition |
-| G10L | Speech Analysis | Speech recognition, NLP, voice processing |
-| G16H | Healthcare Informatics | AI in medicine, clinical decision support |
+| Category | Research Area | Description |
+|:--------:|:--------------|:------------|
+| cs.AI | Artificial Intelligence | Reasoning, agents, knowledge representation, general AI |
+| cs.LG | Machine Learning | Learning algorithms, deep learning, training methods |
+| cs.DB | Databases | Data management, query processing, vector and relational stores |
+| cs.CL | Computation & Language | NLP, language models, text processing |
+| cs.IR | Information Retrieval | Search, recommendation, retrieval-augmented generation |
+| cs.CV | Computer Vision | Image and video recognition |
 
 ---
 
@@ -329,8 +331,8 @@ These are the CPC codes you'll see most often in AI & data processing patents:
 |:----:|:--------|:--------|
 | ![Claude](https://img.shields.io/badge/-Claude_Code-blueviolet?style=flat-square) | AI agent orchestrating the pipeline | `claude` |
 | ![Azure SQL](https://img.shields.io/badge/-Azure_SQL-0078D4?style=flat-square) | Database (free tier) | `sqlcmd -S server -d db -Q "..."` |
-| ![Python](https://img.shields.io/badge/-pyodbc-3776AB?style=flat-square) | Data loading with MERGE upserts | `python3 load_patents.py` |
-| ![USPTO](https://img.shields.io/badge/-USPTO_API-darkblue?style=flat-square) | Patent data source (free) | `X-API-KEY` header |
+| ![Python](https://img.shields.io/badge/-pyodbc-3776AB?style=flat-square) | Data loading with MERGE upserts | `python3 load_papers.py` |
+| ![arXiv](https://img.shields.io/badge/-arXiv_API-b31b1b?style=flat-square) | Research paper data source (free, no key) | `export.arxiv.org/api/query` |
 | ![T-SQL](https://img.shields.io/badge/-T--SQL-CC2927?style=flat-square) | Analysis with OPENJSON | `CROSS APPLY OPENJSON(...)` |
 | ![Azure Functions](https://img.shields.io/badge/-Azure_Functions-0062AD?style=flat-square) | Daily sync automation (free tier) | `func azure functionapp publish` |
 | ![Azure DevOps](https://img.shields.io/badge/-Azure_DevOps-0078D7?style=flat-square) | Ticket-driven workflow | `az boards work-item create/update` |
@@ -349,14 +351,14 @@ Manually, each step requires you to context-switch between docs, languages, and 
 |:-----|:---------------------|:-----------------------------|
 | Track the work | Open Azure DevOps, create a work item, fill in fields | Described in the prompt — created automatically |
 | Design schema | Decide column types, JSON storage strategy, indexing | Review the generated DDL, approve or adjust |
-| Search USPTO API | Read API docs, get a key, write HTTP requests, parse JSON | Describe what you want ("AI data processing patents") — agent calls the API |
+| Search arXiv API | Read API docs, write HTTP requests, parse Atom XML | Describe what you want ("large language models papers") — agent calls the API |
 | Load data into SQL | Write pyodbc script, handle connections, build MERGE statements | Review the generated script, watch it execute, verify row counts |
 | Analyze with T-SQL | Look up OPENJSON syntax, write CTEs, iterate on queries | Ask questions in plain English, review the SQL and results |
 | Visualize results | Write matplotlib boilerplate, format axes, save figures | Describe the charts you want, review the output |
 | Deploy automation | Set up Azure Functions, write timer triggers, configure app settings | Review the function code, watch it deploy, verify in portal |
 | Summarize findings | Write a report from scratch based on query results | Review the generated summary, edit for tone |
 
-**The honest version:** I could not have built this pipeline without Claude Code — not because I can't write T-SQL or Python, but because I wouldn't have sat down and wired together the USPTO API, pyodbc MERGE statements, OPENJSON analytics, matplotlib charts, and Azure DevOps tickets in one sitting. The breadth of tools and syntax across a pipeline like this is the real barrier, and that's exactly what an AI agent absorbs for you.
+**The honest version:** I could not have built this pipeline without Claude Code — not because I can't write T-SQL or Python, but because I wouldn't have sat down and wired together the arXiv API, pyodbc MERGE statements, OPENJSON analytics, matplotlib charts, and Azure DevOps tickets in one sitting. The breadth of tools and syntax across a pipeline like this is the real barrier, and that's exactly what an AI agent absorbs for you.
 
 ---
 
@@ -365,7 +367,7 @@ Manually, each step requires you to context-switch between docs, languages, and 
 | Component | Cost |
 |:----------|:----:|
 | Azure SQL Database free tier | $0/month (lifetime, 100K vCore-seconds, 32 GB) |
-| USPTO Patent API | $0 (free API key) |
+| arXiv API | $0 (no API key needed) |
 | Claude Code (Pro plan) | $20/month (or $100/month for Max) |
 | Azure Functions (Consumption plan) | $0/month (1M free executions, ~30 runs/month) |
 | Azure DevOps Boards free tier | $0 (up to 5 users) |
@@ -406,12 +408,9 @@ The CLAUDE.md file teaches the AI your tools, patterns, and standards. That's th
 
 ## Prerequisites
 
-### USPTO API Key (Required)
+### arXiv API (No Key Needed)
 
-1. Go to: **<https://data.uspto.gov/key/myapikey>**
-2. Sign in or create a free account (email verification)
-3. Click "Generate API Key"
-4. Copy the key and add to `.env` file
+arXiv's API is open: no account, key, or sign-up. Please respect its rule of one request every 3 seconds — `tools/arxiv_search.py` already enforces it.
 
 ### Azure SQL Database (Free Tier)
 
@@ -419,7 +418,7 @@ The CLAUDE.md file teaches the AI your tools, patterns, and standards. That's th
 
 1. Go to: **<https://aka.ms/azuresqlhub>** and click "Try for free"
 2. Create a logical server with SQL authentication
-3. Create database: `PatentIntelligence` (select "None" for data source)
+3. Create database: `PatentIntelligence` (any name works — the free tier allows one free database per subscription, so reuse an existing one; select "None" for data source)
 4. Add your client IP to the firewall rules
 
 ### Local Tools
@@ -474,17 +473,17 @@ az group create --name patent-intelligence-rg --location westus2
 # Create a storage account (required by Azure Functions)
 az storage account create --name patentsyncstore --resource-group patent-intelligence-rg --location westus2 --sku Standard_LRS
 
-# Create the Function App (Consumption plan, Python 3.10)
+# Create the Function App (Consumption plan, Python 3.12)
 az functionapp create \
   --name <your-function-app-name> \
   --resource-group patent-intelligence-rg \
   --storage-account patentsyncstore \
   --consumption-plan-location westus2 \
-  --runtime python --runtime-version 3.10 \
+  --runtime python --runtime-version 3.12 \
   --functions-version 4 --os-type Linux
 ```
 
-3. Configure Application Settings (same env vars from `.env`):
+3. Configure Application Settings (the Azure SQL variables from `.env`; arXiv needs no key):
 
 ```bash
 source .env
@@ -492,7 +491,6 @@ az functionapp config appsettings set \
   --name <your-function-app-name> \
   --resource-group patent-intelligence-rg \
   --settings \
-    USPTO_API_KEY="$USPTO_API_KEY" \
     AZURE_SQL_SERVER="$AZURE_SQL_SERVER" \
     AZURE_SQL_DATABASE="$AZURE_SQL_DATABASE" \
     AZURE_SQL_USER="$AZURE_SQL_USER" \
@@ -518,8 +516,8 @@ cd azure_function && func azure functionapp publish <your-function-app-name> --p
 ### Verify Setup
 
 ```bash
-# Test USPTO API
-python3 -c "from tools.patent_search import _get_api_key; print('OK' if _get_api_key() else 'MISSING')"
+# Test arXiv API (no key needed)
+python3 -c "from tools.arxiv_search import search_by_title; print('OK' if search_by_title('large language models', limit=1) else 'FAILED')"
 
 # Test Azure SQL
 sqlcmd -S yourserver.database.windows.net -d PatentIntelligence -U sqladmin -P 'YourPass' -Q "SELECT 1 AS connected"
@@ -541,7 +539,7 @@ func --version
 |:--:|:---------|:-----|
 | 🤖 | **Claude Code** | [claude.ai/download](https://claude.ai/download) |
 | ☁️ | **Azure SQL Free Tier** | [aka.ms/azuresqlhub](https://aka.ms/azuresqlhub) |
-| 📊 | **USPTO Patent API** | [data.uspto.gov/key/myapikey](https://data.uspto.gov/key/myapikey) |
+| 📊 | **arXiv API** | [info.arxiv.org/help/api](https://info.arxiv.org/help/api/index.html) |
 | 💻 | **This Repository** | [github.com/kyle-chalmers/azure-sql-patent-intelligence](https://github.com/kyle-chalmers/azure-sql-patent-intelligence) |
 
 </div>
@@ -559,7 +557,7 @@ func --version
 | Azure SQL free tier | [aka.ms/azuresqlhub](https://aka.ms/azuresqlhub) |
 | Azure SQL free tier docs | [learn.microsoft.com/azure-sql-free-offer](https://learn.microsoft.com/en-us/azure/azure-sql/database/free-offer) |
 | sqlcmd docs | [learn.microsoft.com/sqlcmd-utility](https://learn.microsoft.com/en-us/sql/tools/sqlcmd/sqlcmd-utility) |
-| USPTO API key | [data.uspto.gov/key/myapikey](https://data.uspto.gov/key/myapikey) |
+| arXiv API docs | [info.arxiv.org/help/api](https://info.arxiv.org/help/api/index.html) |
 | Claude Code | [claude.ai/download](https://claude.ai/download) |
 | This repo | [github.com/kyle-chalmers/azure-sql-patent-intelligence](https://github.com/kyle-chalmers/azure-sql-patent-intelligence) |
 

@@ -1,6 +1,6 @@
 # Azure SQL Database Setup Guide (Free Tier)
 
-This guide walks you through creating a free Azure SQL Database for the patent intelligence demo. The free tier includes **100,000 vCore-seconds** of compute and **32 GB of storage** — more than enough for this project.
+This guide walks you through creating a free Azure SQL Database for the arXiv paper intelligence demo. The free tier includes **100,000 vCore-seconds** of compute and **32 GB of storage** — more than enough for this project.
 
 Total time: ~10 minutes.
 
@@ -30,7 +30,7 @@ On the "Create SQL Database" page:
 |-------|-------|
 | **Subscription** | Your Azure subscription |
 | **Resource group** | Create new or use existing (e.g., `your_resource_group`) |
-| **Database name** | `PatentIntelligence` |
+| **Database name** | `PatentIntelligence` (any name works; the free tier allows one free database per subscription, so reuse an existing one) |
 | **Server** | Click "Create new" (see Step 3) |
 | **Want to use SQL elastic pool?** | No |
 | **Workload environment** | Development |

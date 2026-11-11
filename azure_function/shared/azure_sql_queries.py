@@ -1,9 +1,9 @@
-"""Azure SQL (T-SQL) query builders for patent data.
+"""Azure SQL (T-SQL) query builders for arXiv paper data.
 
 This module provides functions to generate T-SQL queries for:
-- Creating the PATENTS table with proper indexes
-- Upserting patent records using MERGE
-- Analyzing filing trends, inventors, and CPC codes
+- Creating the PAPERS table with proper indexes
+- Upserting paper records using MERGE
+- Analyzing submission trends, authors, and arXiv categories
 - JSON handling via OPENJSON and CROSS APPLY
 
 Key T-SQL adaptations from Snowflake:
@@ -14,185 +14,186 @@ Key T-SQL adaptations from Snowflake:
     LIMIT N               -> TOP N
     TIMESTAMP             -> DATETIME2
 """
-import json
 
 
 def build_create_table_sql() -> str:
-    """Generate T-SQL CREATE TABLE statement for PATENTS table.
+    """Generate T-SQL CREATE TABLE statement for PAPERS table.
 
     Returns:
         T-SQL DDL string with table creation and index statements
     """
     return """
-IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PATENTS')
-CREATE TABLE PATENTS (
-    patent_number NVARCHAR(50) NOT NULL PRIMARY KEY,
-    title NVARCHAR(500),
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PAPERS')
+CREATE TABLE PAPERS (
+    arxiv_id NVARCHAR(50) NOT NULL PRIMARY KEY,
+    title NVARCHAR(1000),
     abstract NVARCHAR(MAX),
-    assignee NVARCHAR(300),
-    inventors NVARCHAR(MAX),       -- JSON array stored as string
-    filing_date DATE,
-    grant_date DATE,
-    cpc_codes NVARCHAR(MAX),       -- JSON array stored as string
+    primary_category NVARCHAR(100),
+    authors NVARCHAR(MAX),         -- JSON array stored as string
+    submitted_date DATE,           -- first version submitted to arXiv
+    updated_date DATE,             -- latest arXiv revision (not the row timestamp)
+    categories NVARCHAR(MAX),      -- JSON array stored as string
     search_query NVARCHAR(200),
-    category NVARCHAR(100),
+    load_source NVARCHAR(100),     -- how the row was loaded: title_search / backfill / daily_sync / category_collection
     created_at DATETIME2 DEFAULT GETDATE(),
     updated_at DATETIME2 DEFAULT GETDATE()
 );
 
 -- Indexes for common query patterns
-IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_PATENTS_ASSIGNEE')
-    CREATE INDEX IX_PATENTS_ASSIGNEE ON PATENTS (assignee);
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_PAPERS_PRIMARY_CATEGORY')
+    CREATE INDEX IX_PAPERS_PRIMARY_CATEGORY ON PAPERS (primary_category);
 
-IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_PATENTS_FILING_DATE')
-    CREATE INDEX IX_PATENTS_FILING_DATE ON PATENTS (filing_date);
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_PAPERS_SUBMITTED_DATE')
+    CREATE INDEX IX_PAPERS_SUBMITTED_DATE ON PAPERS (submitted_date);
 """
 
 
 def build_upsert_query() -> str:
-    """Generate T-SQL MERGE template for upserting patent records.
+    """Generate T-SQL MERGE template for upserting paper records.
 
     This returns a parameterized MERGE statement for use with pyodbc.
-    Parameters are passed via ? placeholders.
+    Parameters are passed via ? placeholders, in this order:
+    arxiv_id, title, abstract, primary_category, authors, submitted_date,
+    updated_date, categories, search_query, load_source.
 
     Returns:
         T-SQL MERGE statement with parameter placeholders
     """
     return """
-MERGE INTO PATENTS AS target
+MERGE INTO PAPERS AS target
 USING (SELECT
-    ? AS patent_number,
+    ? AS arxiv_id,
     ? AS title,
     ? AS abstract,
-    ? AS assignee,
-    ? AS inventors,
-    ? AS filing_date,
-    ? AS grant_date,
-    ? AS cpc_codes,
+    ? AS primary_category,
+    ? AS authors,
+    ? AS submitted_date,
+    ? AS updated_date,
+    ? AS categories,
     ? AS search_query,
-    ? AS category
+    ? AS load_source
 ) AS source
-ON target.patent_number = source.patent_number
+ON target.arxiv_id = source.arxiv_id
 WHEN MATCHED THEN UPDATE SET
     title = source.title,
     abstract = source.abstract,
-    assignee = source.assignee,
-    inventors = source.inventors,
-    filing_date = source.filing_date,
-    grant_date = source.grant_date,
-    cpc_codes = source.cpc_codes,
+    primary_category = source.primary_category,
+    authors = source.authors,
+    submitted_date = source.submitted_date,
+    updated_date = source.updated_date,
+    categories = source.categories,
     search_query = source.search_query,
-    category = source.category,
+    load_source = source.load_source,
     updated_at = GETDATE()
 WHEN NOT MATCHED THEN INSERT (
-    patent_number, title, abstract, assignee, inventors,
-    filing_date, grant_date, cpc_codes, search_query, category,
+    arxiv_id, title, abstract, primary_category, authors,
+    submitted_date, updated_date, categories, search_query, load_source,
     created_at, updated_at
 ) VALUES (
-    source.patent_number, source.title, source.abstract, source.assignee,
-    source.inventors, source.filing_date, source.grant_date, source.cpc_codes,
-    source.search_query, source.category, GETDATE(), GETDATE()
+    source.arxiv_id, source.title, source.abstract, source.primary_category,
+    source.authors, source.submitted_date, source.updated_date, source.categories,
+    source.search_query, source.load_source, GETDATE(), GETDATE()
 );
 """
 
 
-def get_patent_count_query() -> str:
-    """Query to get total patent count and date range.
+def get_paper_count_query() -> str:
+    """Query to get total paper count and date range.
 
     Returns:
         T-SQL query string
     """
     return """
 SELECT
-    COUNT(*) AS total_patents,
-    MIN(filing_date) AS earliest_filing,
-    MAX(filing_date) AS latest_filing,
-    COUNT(DISTINCT assignee) AS unique_assignees
-FROM PATENTS;
+    COUNT(*) AS total_papers,
+    MIN(submitted_date) AS earliest_submission,
+    MAX(submitted_date) AS latest_submission,
+    COUNT(DISTINCT primary_category) AS unique_primary_categories
+FROM PAPERS;
 """
 
 
 def get_trends_query() -> str:
-    """Query for patent filing trends by year.
+    """Query for paper submission trends by year.
 
     Returns:
         T-SQL query string
     """
     return """
 SELECT
-    YEAR(filing_date) AS filing_year,
-    COUNT(*) AS patent_count
-FROM PATENTS
-WHERE filing_date IS NOT NULL
-GROUP BY YEAR(filing_date)
-ORDER BY filing_year;
+    YEAR(submitted_date) AS submission_year,
+    COUNT(*) AS paper_count
+FROM PAPERS
+WHERE submitted_date IS NOT NULL
+GROUP BY YEAR(submitted_date)
+ORDER BY submission_year;
 """
 
 
-def get_top_inventors_query(top_n: int = 10) -> str:
-    """Query for most prolific inventors using OPENJSON to parse JSON array.
+def get_top_authors_query(top_n: int = 10) -> str:
+    """Query for most prolific authors using OPENJSON to parse JSON array.
 
     Args:
-        top_n: Number of top inventors to return
+        top_n: Number of top authors to return
 
     Returns:
         T-SQL query string using CROSS APPLY OPENJSON
     """
     return f"""
 SELECT TOP {top_n}
-    inventor.value AS inventor_name,
-    COUNT(*) AS patent_count
-FROM PATENTS
-CROSS APPLY OPENJSON(inventors) AS inventor
-GROUP BY inventor.value
-ORDER BY patent_count DESC;
+    author.value AS author_name,
+    COUNT(*) AS paper_count
+FROM PAPERS
+CROSS APPLY OPENJSON(authors) AS author
+GROUP BY author.value
+ORDER BY paper_count DESC;
 """
 
 
-def get_cpc_breakdown_query(top_n: int = 10) -> str:
-    """Query for technology category breakdown using OPENJSON.
+def get_category_breakdown_query(top_n: int = 10) -> str:
+    """Query for arXiv category breakdown using OPENJSON.
 
     Args:
-        top_n: Number of top CPC codes to return
+        top_n: Number of top categories to return
 
     Returns:
         T-SQL query string using CROSS APPLY OPENJSON
     """
     return f"""
 SELECT TOP {top_n}
-    LEFT(cpc.value, 4) AS cpc_group,
-    COUNT(*) AS patent_count
-FROM PATENTS
-CROSS APPLY OPENJSON(cpc_codes) AS cpc
-GROUP BY LEFT(cpc.value, 4)
-ORDER BY patent_count DESC;
+    cat.value AS arxiv_category,
+    COUNT(*) AS paper_count
+FROM PAPERS
+CROSS APPLY OPENJSON(categories) AS cat
+GROUP BY cat.value
+ORDER BY paper_count DESC;
 """
 
 
-def get_assignee_comparison_query() -> str:
-    """Query to compare patent activity across assignees.
+def get_primary_category_comparison_query() -> str:
+    """Query to compare paper activity across primary categories.
 
     Returns:
         T-SQL query string
     """
     return """
 SELECT
-    assignee,
-    COUNT(*) AS total_patents,
-    MIN(filing_date) AS earliest_filing,
-    MAX(filing_date) AS latest_filing,
-    COUNT(DISTINCT YEAR(filing_date)) AS active_years
-FROM PATENTS
-GROUP BY assignee
-ORDER BY total_patents DESC;
+    primary_category,
+    COUNT(*) AS total_papers,
+    MIN(submitted_date) AS earliest_submission,
+    MAX(submitted_date) AS latest_submission,
+    COUNT(DISTINCT YEAR(submitted_date)) AS active_years
+FROM PAPERS
+GROUP BY primary_category
+ORDER BY total_papers DESC;
 """
 
 
 def build_create_sync_log_sql() -> str:
     """Generate T-SQL CREATE TABLE statement for SYNC_LOG table.
 
-    Tracks daily sync runs: when they happened, what date range was covered,
-    how many patents were loaded, and which topics were searched.
+    Tracks daily sync runs: when they happened, what submission-date range was
+    covered, how many papers were loaded, and which topics were searched.
 
     Returns:
         T-SQL DDL string with table creation
@@ -202,9 +203,9 @@ IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'SYNC_LOG')
 CREATE TABLE SYNC_LOG (
     sync_id INT IDENTITY(1,1) PRIMARY KEY,
     sync_date DATETIME2 DEFAULT GETDATE(),
-    filing_date_from DATE,
-    filing_date_to DATE,
-    patents_loaded INT,
+    submitted_from DATE,
+    submitted_to DATE,
+    papers_loaded INT,
     search_topics NVARCHAR(500),
     sync_status NVARCHAR(50) DEFAULT 'completed'
 );
@@ -214,7 +215,7 @@ CREATE TABLE SYNC_LOG (
 def get_last_sync_date_query() -> str:
     """Query to get the last successful sync date.
 
-    Returns the most recent filing_date_to from a completed sync,
+    Returns the most recent submitted_to from a completed sync,
     used as the starting point for the next daily sync run.
 
     Returns:
@@ -222,9 +223,9 @@ def get_last_sync_date_query() -> str:
     """
     return """
 SELECT TOP 1
-    filing_date_to AS last_sync_date,
+    submitted_to AS last_sync_date,
     sync_date,
-    patents_loaded
+    papers_loaded
 FROM SYNC_LOG
 WHERE sync_status = 'completed'
 ORDER BY sync_date DESC;
