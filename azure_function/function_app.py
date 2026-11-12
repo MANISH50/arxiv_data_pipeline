@@ -1,6 +1,6 @@
 """Azure Function: Daily arXiv Paper Sync
 
-Timer-triggered function that runs daily at 7:31 AM UTC (12:31 AM MST).
+Timer-triggered function that runs daily at 7:00 AM UTC (midnight MST).
 Searches the arXiv API for papers submitted since the last sync and loads
 them into Azure SQL Database using MERGE upsert. arXiv needs no API key.
 
@@ -57,7 +57,7 @@ def _get_connection(retries: int = 3, delay: int = 30) -> pyodbc.Connection:
     raise last_error
 
 
-@app.timer_trigger(schedule="0 31 7 * * *", arg_name="timer", run_on_startup=False)
+@app.timer_trigger(schedule="0 0 7 * * *", arg_name="timer", run_on_startup=False)
 def daily_paper_sync(timer: func.TimerRequest) -> None:
     """Daily paper sync: search arXiv for new papers and load into Azure SQL."""
     logging.info("Starting daily paper sync")
